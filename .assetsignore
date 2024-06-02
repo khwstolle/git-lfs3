@@ -1,0 +1,8 @@
+_worker.js
+node_modules
+src
+test
+docs
+package.json
+package-lock.json
+.github

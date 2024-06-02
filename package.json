@@ -1,0 +1,19 @@
+{
+  "name": "git-lfs3",
+  "version": "1.0.0",
+  "description": "A Git LFS server on Cloudflare Pages that presigns URLs for any S3-compatible bucket.",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "author": "Kurt Stolle",
+  "homepage": "https://github.com/khwstolle/git-lfs3#readme",
+  "repository": { "type": "git", "url": "https://github.com/khwstolle/git-lfs3.git" },
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "test": "node --test",
+    "dev": "npx --yes wrangler pages dev .",
+    "check:bundle": "esbuild _worker.js --bundle --format=esm --outfile=/dev/null"
+  },
+  "dependencies": { "aws4fetch": "^1.0.17" },
+  "devDependencies": { "esbuild": "^0.24.0" }
+}
