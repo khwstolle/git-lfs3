@@ -182,6 +182,10 @@ npm run dev            # serve locally with Wrangler (fetched on demand via npx)
 
 The worker logic lives in `src/`; `_worker.js` is the entry point Cloudflare bundles. Tests are offline because S3 signing is local crypto (no network).
 
+## Acknowledgements
+
+Much inspiration was retrofitted from [twilligon/git-lfs-s3-proxy](https://github.com/twilligon/git-lfs-s3-proxy), a Git LFS proxy for S3-compatible storage that fills the exact same use-case. Thanks to its authors.
+
 ## License
 
 [MIT](LICENSE) © 2026 Kurt Stolle
