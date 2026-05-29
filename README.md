@@ -9,15 +9,15 @@ Why use it:
 
 ## How it works
 
-git-lfs3 implements the [Git LFS Batch API](https://github.com/git-lfs/git-lfs/blob/main/docs/api/batch.md). For each object your client asks to transfer, the worker presigns a time-limited, path-style S3 URL using the S3 credentials from your LFS URL and returns it; your client then uploads/downloads bytes **directly** to/from the bucket. The worker is stateless — it never stores your credentials and makes no outbound request on your behalf. See [SECURITY.md](SECURITY.md) for the full trust model.
+git-lfs3 implements the [Git LFS Batch API](https://github.com/git-lfs/git-lfs/blob/main/docs/api/batch.md). For each object your client asks to transfer, the worker presigns a time-limited, path-style S3 URL using the S3 credentials from your LFS URL and returns it; your client then uploads/downloads bytes **directly** to/from the bucket. The worker is stateless — it never stores your credentials and sends no outbound request on your behalf. See [SECURITY.md](SECURITY.md) for the full trust model.
 
-`region`/`service`/`sessionToken` may be supplied as `key=value` path segments before the endpoint (e.g. `…@<INSTANCE>/region=auto/<ENDPOINT>/<BUCKET>`). `service` defaults to `s3`. Cloudflare R2 works with the defaults; **Amazon S3 requires the bucket's region** (e.g. `region=us-east-1`).
+You can supply `region`/`service`/`sessionToken` as `key=value` path segments before the endpoint (e.g. `…@<INSTANCE>/region=auto/<ENDPOINT>/<BUCKET>`). `service` defaults to `s3`. Cloudflare R2 works with the defaults; **Amazon S3 requires the bucket's region** (e.g. `region=us-east-1`).
 
 Because the worker is stateless and never contacts the store, a few behaviors follow:
 
 - It cannot tell whether an object already exists, so `git lfs push` re-uploads every object (an S3 `PUT` of identical content is idempotent, so this is harmless — just extra transfer).
-- A download of an object that is missing from the bucket still returns a signed URL; the failure surfaces later as an S3 transfer error rather than a Git LFS "not found" message.
-- At most 1000 objects are signed per batch request; Git LFS chunks larger transfers automatically.
+- The worker still returns a signed URL for an object missing from the bucket; the failure surfaces later as an S3 transfer error rather than a Git LFS "not found" message.
+- The worker signs at most 1000 objects per batch request; Git LFS chunks larger transfers automatically.
 
 ## Deploy the proxy
 
@@ -29,7 +29,7 @@ Fork this repository, then create a Cloudflare Pages project connected to your f
 
 After the first deploy, Cloudflare assigns the project a `*.pages.dev` hostname (you can also attach a custom domain). This hostname becomes `<INSTANCE>` in later steps.
 
-To change the signed URL lifetime, set the `EXPIRY` environment variable (seconds; default 3600). `EXPIRY` is clamped to S3's allowed range of 1–604800 seconds (7 days); empty, unset, or non-numeric values fall back to the 3600-second default.
+To change the signed URL lifetime, set the `EXPIRY` environment variable (seconds; default 3600). The worker clamps `EXPIRY` to S3's allowed range of 1–604800 seconds (7 days); empty, unset, or non-numeric values fall back to the 3600-second default.
 
 Visiting the deployment in a browser shows a short landing page explaining how to point a Git client at it (try [lfs.khws.io](https://lfs.khws.io)).
 
