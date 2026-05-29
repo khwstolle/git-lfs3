@@ -15,5 +15,5 @@
     "check:bundle": "esbuild _worker.js --bundle --format=esm --outfile=/dev/null"
   },
   "dependencies": { "aws4fetch": "^1.0.17" },
-  "devDependencies": { "esbuild": "^0.24.0" }
+  "devDependencies": { "esbuild": "^0.25.0" }
 }
