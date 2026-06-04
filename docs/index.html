@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>git-lfs3 — Git LFS on Cloudflare, backed by S3</title>
+<meta name="description" content="git-lfs3 is a Git LFS server that runs on Cloudflare Pages and stores objects in any S3-compatible bucket. Free transfer, cheap storage, low latency.">
+<script>
+  // Set the theme before first paint so there is no light-on-dark flash.
+  (function () {
+    try {
+      document.documentElement.dataset.theme = localStorage.getItem("tb-theme") || "dark";
+    } catch (e) { document.documentElement.dataset.theme = "dark"; }
+  })();
+</script>
+<link rel="stylesheet" href="index.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto+Flex:opsz,wdth,wght,GRAD@8..144,25..151,100..1000,-200..150&family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;1,400&display=swap">
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+</head>
+<body class="lfs3-noise">
+
+  <header class="topbar">
+    <div class="topbar-left">
+      <a class="brand" href="#top" aria-label="LFS3">
+        <span class="brand-logo">LF<b>S3</b></span>
+      </a>
+    </div>
+    <nav class="topbar-right">
+      <a class="topbar-link only-wide" href="#how-it-works">How it works</a>
+      <a class="topbar-link only-wide" href="#deploy">Deploy</a>
+      <a class="topbar-link only-wide" href="#url">URL builder</a>
+      <span class="topbar-sep"></span>
+      <a class="topbar-link only-wide" href="https://github.com/khwstolle/git-lfserve" target="_blank" rel="noopener">git-lfserve</a>
+      <a class="iconbtn" href="https://github.com/khwstolle/git-lfs3" target="_blank" rel="noopener" aria-label="GitHub repository"><span class="icon icon-18" data-icon="github-logo" data-size="18"></span></a>
+      <button class="iconbtn" data-theme-toggle aria-label="Toggle colour theme"><span class="icon icon-18" data-icon="sun" data-size="18"></span></button>
+    </nav>
+  </header>
+
+  <section class="hero" id="top">
+    <canvas class="hero-flow" id="heroFlow" aria-hidden="true"></canvas>
+    <div class="hero-inner">
+      <div class="hero-left">
+        <div class="hero-eyebrow">
+          <span class="lfs3-stamp">GIT LFS · S3 PROXY</span>
+        </div>
+        <h1 class="hero-title">Run your own Git&nbsp;LFS<br>in <span class="accent">minutes.</span></h1>
+        <p class="hero-intro">
+          <span>Git LFS is a Git extension that swaps large files for small text pointers, keeping heavy binaries out of the repository.</span>
+          <span><strong>git-lfs3</strong> is a stateless Git LFS server on Cloudflare Pages — it signs short-lived URLs so your client transfers files straight to your own S3-compatible bucket.</span>
+        </p>
+        <div class="hero-cta">
+          <a class="lfs3-btn lfs3-btn-primary" href="https://github.com/khwstolle/git-lfs3" target="_blank" rel="noopener"><span class="icon" data-icon="rocket" data-size="15"></span>Deploy the proxy</a>
+          <a class="lfs3-btn" href="#how-it-works"><span class="icon" data-icon="reader" data-size="15"></span>Read the docs</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="page">
+    <main>
+    <section class="doc-sec" id="why">
+      <h2 class="doc-h2">Why git-lfs3</h2>
+      <p class="doc-p">GitHub's built-in LFS meters both storage and transfer, and the free tier is shared across every repository and fork. Backed by Cloudflare R2, git-lfs3 makes transfer free and drops storage to a fraction of the price.</p>
+      <div class="doc-tablewrap">
+        <table class="lfs3-table cmp-table">
+          <thead>
+            <tr><th>Metric</th><th>GitHub LFS</th><th class="cmp-good">git-lfs3 + R2</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Storage</td><td>$0.07 / GB·mo</td><td class="cmp-good">$0.015 / GB·mo</td></tr>
+            <tr><td>Transfer (egress)</td><td>$0.0875 / GiB over 10&nbsp;GiB</td><td class="cmp-good">Free</td></tr>
+            <tr><td>Free tier</td><td>10&nbsp;GiB shared, all repos + forks</td><td class="cmp-good">10&nbsp;GB storage · unlimited bandwidth</td></tr>
+            <tr><td>URL latency</td><td>~270&nbsp;ms</td><td class="cmp-good">~20–100&nbsp;ms · same datacenters</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="doc-p">Latency is low enough to <a href="https://github.com/khwstolle/git-lfserve">serve whole websites</a> straight from LFS, bypassing the 25&nbsp;MiB Cloudflare Pages file-size limit.</p>
+    </section>
+
+    <section class="doc-sec" id="how-it-works">
+      <h2 class="doc-h2">How it works</h2>
+      <p class="doc-p">git-lfs3 implements the <a href="https://github.com/git-lfs/git-lfs/blob/main/docs/api/batch.md">Git LFS Batch API</a>. For each object your client transfers, the worker presigns a time-limited, path-style S3 URL from the credentials in your LFS URL and returns it. Your client then uploads or downloads bytes <strong>directly</strong> to the bucket.</p>
+      <p class="doc-p">The worker is stateless. It never stores your credentials and makes no outbound request on your behalf. See <a href="https://github.com/khwstolle/git-lfs3/blob/master/SECURITY.md">SECURITY.md</a> for the full trust model.</p>
+      <h3 class="doc-h3">Path-segment options</h3>
+      <p class="doc-p">Supply <code>region</code>, <code>service</code>, or <code>sessionToken</code> as <code>key=value</code> segments before the endpoint. <code>service</code> defaults to <code>s3</code>. R2 works with the defaults; <strong>Amazon S3 requires the bucket's region</strong>.</p>
+      <div class="codeblock" data-lang="bash" data-file=".lfsconfig url">
+        <pre><code>…@&lt;INSTANCE&gt;/region=auto/&lt;ENDPOINT&gt;/&lt;BUCKET&gt;</code></pre>
+      </div>
+      <h3 class="doc-h3">Consequences of statelessness</h3>
+      <ul class="doc-ul">
+        <li>The worker can't tell whether an object already exists, so <code>git lfs push</code> re-uploads every object. An S3 <code>PUT</code> of identical content is idempotent, so this is harmless — just extra transfer.</li>
+        <li>It still returns a signed URL for an object missing from the bucket; the failure surfaces later as an S3 transfer error, not a Git LFS "not found".</li>
+        <li>It signs at most <strong>1000 objects per batch</strong>; Git LFS chunks larger transfers automatically.</li>
+      </ul>
+    </section>
+
+    <section class="doc-sec" id="deploy">
+      <h2 class="doc-h2">Deploy the proxy</h2>
+      <p class="doc-p">Fork the repository, then create a Cloudflare Pages project connected to your fork with these settings:</p>
+      <div class="doc-tablewrap">
+        <table class="lfs3-table">
+          <tbody>
+            <tr><th>Framework preset</th><td><code>None</code></td></tr>
+            <tr><th>Build command</th><td><code>npm install --omit=dev</code></td></tr>
+            <tr><th>Build output directory</th><td><code>/</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="doc-p"><code>--omit=dev</code> installs <code>aws4fetch</code> for Cloudflare's bundler while skipping the local-dev and test tooling, so it isn't uploaded as static assets.</p>
+      <p class="doc-p">After the first deploy, Cloudflare assigns a <code>*.pages.dev</code> hostname — this becomes your <code>&lt;INSTANCE&gt;</code> in the steps below. You can also attach a custom domain.</p>
+      <div class="doc-callout lfs3-alert lfs3-alert-info">
+        <span class="icon callout-icon callout-info" data-icon="info-circled" data-size="18"></span>
+        <div>
+          <div class="callout-title">Signed URL lifetime</div>
+          <div class="callout-body">Set the <code>EXPIRY</code> environment variable (seconds; default <code>3600</code>). It is clamped to S3's allowed range of 1–604800 seconds (7 days). Empty, unset, or non-numeric values fall back to the default.</div>
+        </div>
+      </div>
+      <p class="doc-p">Visiting the deployment in a browser shows a short landing page explaining how to point a Git client at it — try <a href="https://lfs.khws.io">lfs.khws.io</a>.</p>
+    </section>
+
+    <section class="doc-sec" id="bucket">
+      <h2 class="doc-h2">Connect a bucket</h2>
+      <p class="doc-p">On any S3-compatible object store, create a bucket for your LFS assets and an access key with read/write permission. The credential is always a pair: an access key ID such as <code>AKIAIOSFODNN7EXAMPLE</code> and a secret such as <code>wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY</code>. URL-encode either value if it contains non-alphanumeric characters.</p>
+      <p class="doc-p">Pick a provider for setup links and the endpoint format. R2 has the most generous free tier and shares datacenters with the LFS client worker.</p>
+      <div class="provider-tabs" id="providerTabs"></div>
+    </section>
+
+    <section class="doc-sec" id="url">
+      <h2 class="doc-h2">Build the server URL</h2>
+      <p class="doc-p">The LFS server URL packs the credential, instance, endpoint, and bucket into one string:</p>
+      <div class="codeblock" data-lang="bash" data-file="url template">
+        <pre><code>https://&lt;ACCESS_KEY_ID&gt;:&lt;SECRET_ACCESS_KEY&gt;@&lt;INSTANCE&gt;/&lt;ENDPOINT&gt;/&lt;BUCKET&gt;</code></pre>
+      </div>
+      <p class="doc-p">It's fiddly to assemble by hand. Fill the fields below and copy the result. Nothing leaves your browser — the builder runs entirely client-side.</p>
+
+      <div class="urlb" id="urlBuilder">
+        <div class="urlb-grid">
+          <label class="urlb-field urlb-span2">
+            <span class="urlb-label">Provider preset</span>
+            <select id="ub-provider"></select>
+          </label>
+          <label class="urlb-field">
+            <span class="urlb-label">Access key ID</span>
+            <input id="ub-key" type="text" autocomplete="off" spellcheck="false" placeholder="AKIA…" />
+          </label>
+          <label class="urlb-field">
+            <span class="urlb-label">Secret access key</span>
+            <input id="ub-secret" type="text" autocomplete="off" spellcheck="false" placeholder="wJalrXUt…" />
+          </label>
+          <label class="urlb-field">
+            <span class="urlb-label">Instance host</span>
+            <input id="ub-instance" type="text" autocomplete="off" spellcheck="false" placeholder="lfs.khws.io" />
+          </label>
+          <label class="urlb-field" id="ub-var-field">
+            <span class="urlb-label"><span id="ub-var-label">Region</span> <span class="urlb-req" id="ub-var-req" hidden>required</span></span>
+            <input id="ub-var" type="text" autocomplete="off" spellcheck="false" placeholder="us-east-1" />
+          </label>
+          <label class="urlb-field">
+            <span class="urlb-label">Bucket</span>
+            <input id="ub-bucket" type="text" autocomplete="off" spellcheck="false" placeholder="my-site" />
+          </label>
+          <label class="urlb-field urlb-span2">
+            <span class="urlb-label">S3 endpoint <span class="urlb-auto">auto</span></span>
+            <input id="ub-endpoint" type="text" readonly tabindex="-1" aria-readonly="true" placeholder="endpoint" />
+          </label>
+        </div>
+        <div class="urlb-out">
+          <div class="urlb-out-bar">
+            <span class="urlb-out-label">Result</span>
+            <button class="codeblock-copy" id="ub-copy" type="button">
+              <span class="icon" data-icon="copy" data-size="13"></span><span class="ub-copy-text">COPY</span>
+            </button>
+          </div>
+          <pre class="urlb-out-pre" id="ub-result"><code></code></pre>
+          <div class="urlb-note" id="ub-note"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="doc-sec" id="install-lfs">
+      <h2 class="doc-h2">Install Git LFS</h2>
+      <p class="doc-p">Check whether Git LFS is already present:</p>
+      <div class="codeblock" data-lang="bash" data-file="terminal">
+        <pre><code>git lfs version</code></pre>
+      </div>
+      <p class="doc-p">If the command reports <code>git: 'lfs' is not a git command</code>, follow the upstream <a href="https://github.com/git-lfs/git-lfs#installing">installation instructions</a>. Then set up the smudge and clean filters for your user account:</p>
+      <div class="codeblock" data-lang="bash" data-file="terminal">
+        <pre><code>git lfs install</code></pre>
+      </div>
+    </section>
+
+    <section class="doc-sec" id="point-git">
+      <h2 class="doc-h2">Point Git at the proxy</h2>
+      <p class="doc-p">Two approaches, depending on who can push.</p>
+      <h3 class="doc-h3">Separate read and write keys</h3>
+      <p class="doc-p">The committed <code>.lfsconfig</code> carries a read-only URL; the read/write key reaches each clone out-of-band. Use this for public repos and most private repos with several collaborators. Create a read-only access key, build a URL with it, and commit it:</p>
+      <div class="codeblock" data-lang="bash" data-file="terminal">
+        <pre><code>cd "$(git rev-parse --show-toplevel)"   # repository root
+    git config -f .lfsconfig lfs.url 'https://&lt;RO_KEY&gt;:&lt;RO_SECRET&gt;@&lt;INSTANCE&gt;/&lt;ENDPOINT&gt;/&lt;BUCKET&gt;'
+    git add .lfsconfig
+    git commit -m "Add .lfsconfig"</code></pre>
+      </div>
+      <p class="doc-p">Grant a clone write access by adding a read/write URL to its <code>.git/config</code>. Git never commits <code>.git/config</code>, so the key stays private:</p>
+      <div class="codeblock" data-lang="bash" data-file="terminal">
+        <pre><code>git config lfs.url 'https://&lt;RW_KEY&gt;:&lt;RW_SECRET&gt;@&lt;INSTANCE&gt;/&lt;ENDPOINT&gt;/&lt;BUCKET&gt;'</code></pre>
+      </div>
+      <h3 class="doc-h3">Shared read/write key</h3>
+      <p class="doc-p">Simpler, less secure: put the read/write URL directly in <code>.lfsconfig</code>. Anyone with a clone can then push.</p>
+      <div class="codeblock" data-lang="bash" data-file="terminal">
+        <pre><code>git config -f .lfsconfig lfs.url 'https://&lt;RW_KEY&gt;:&lt;RW_SECRET&gt;@&lt;INSTANCE&gt;/&lt;ENDPOINT&gt;/&lt;BUCKET&gt;'
+    git add .lfsconfig
+    git commit -m "Add .lfsconfig"</code></pre>
+      </div>
+    </section>
+
+    <section class="doc-sec" id="track">
+      <h2 class="doc-h2">Track files with Git LFS</h2>
+      <p class="doc-p">Once Git points at the proxy, use Git LFS as usual. Route a file type through LFS for future commits:</p>
+      <div class="codeblock" data-lang="bash" data-file="terminal">
+        <pre><code>git lfs track '*.iso'
+    git add .gitattributes
+    git commit -m "Add .iso files to Git LFS"</code></pre>
+      </div>
+      <p class="doc-p">Move files already in history into LFS with <code>git lfs migrate</code> (this rewrites history):</p>
+      <div class="codeblock" data-lang="bash" data-file="terminal">
+        <pre><code># move all existing .iso files
+    git lfs migrate import --everything --include='*.iso'
+
+    # or move every file above 25 MiB
+    git lfs migrate import --everything --above=25MiB
+
+    git push --all --force-with-lease</code></pre>
+      </div>
+    </section>
+
+    <section class="doc-sec" id="migrate">
+      <h2 class="doc-h2">Migrating existing objects</h2>
+      <p class="doc-p">Only relevant if you already store objects on another LFS server. <strong>Fetch every object before changing the LFS URL</strong>, then push them to the proxy.</p>
+      <details class="doc-details">
+        <summary class="doc-summary"><span class="icon" data-icon="chevron-right" data-size="14"></span>Show migration steps</summary>
+        <div class="doc-details-body">
+          <p class="doc-p">Before changing the URL, fetch a local copy of everything:</p>
+          <div class="codeblock" data-lang="bash" data-file="terminal">
+            <pre><code>git lfs fetch --all</code></pre>
+          </div>
+          <p class="doc-p">After <a href="#point-git">pointing Git at the proxy</a>, push every fetched object:</p>
+          <div class="codeblock" data-lang="bash" data-file="terminal">
+            <pre><code>git lfs push --all origin</code></pre>
+          </div>
+        </div>
+      </details>
+    </section>
+
+    <section class="doc-sec" id="development">
+      <h2 class="doc-h2">Development</h2>
+      <p class="doc-p">The worker logic lives in <code>src/</code>; <code>_worker.js</code> is the entry point Cloudflare bundles. Tests run offline because S3 signing is local crypto — no network.</p>
+      <div class="codeblock" data-lang="bash" data-file="terminal">
+        <pre><code>npm install            # runtime + dev dependencies
+    npm test               # offline test suite (node --test)
+    npm run check:bundle   # verify the Cloudflare Pages bundle
+    npm run dev            # serve locally with Wrangler</code></pre>
+      </div>
+      <div class="doc-callout lfs3-alert lfs3-alert-info">
+        <span class="icon callout-icon callout-info" data-icon="layers" data-size="18"></span>
+        <div>
+          <div class="callout-title">Serving files, not just storing them</div>
+          <div class="callout-body">To serve LFS objects directly from a Cloudflare Pages site — bypassing the 25&nbsp;MiB file limit — pair git-lfs3 with its sibling, <a href="https://github.com/khwstolle/git-lfserve">git-lfserve</a>.</div>
+        </div>
+      </div>
+    </section>
+    </main>
+  </div>
+
+  <footer class="foot">
+    <div class="foot-cta">
+      <div>
+        <div class="foot-cta-title">Host your own Git LFS</div>
+        <div class="foot-cta-sub">Fork the worker, connect a bucket, point Git at it. No servers to run.</div>
+      </div>
+      <a class="lfs3-btn lfs3-btn-primary" href="https://github.com/khwstolle/git-lfs3" target="_blank" rel="noopener"><span class="icon" data-icon="rocket" data-size="15"></span>Get the proxy</a>
+    </div>
+    <div class="foot-cols">
+      <div class="foot-meta">MIT © 2026 Kurt Stolle</div>
+      <div class="foot-links">
+        <a class="lfs3-btn lfs3-btn-sm lfs3-btn-ghost" href="https://github.com/khwstolle/git-lfs3" target="_blank" rel="noopener"><span class="icon" data-icon="github-logo" data-size="14"></span>git-lfs3</a>
+        <a class="lfs3-btn lfs3-btn-sm lfs3-btn-ghost" href="https://github.com/khwstolle/git-lfserve" target="_blank" rel="noopener"><span class="icon" data-icon="layers" data-size="14"></span>git-lfserve</a>
+        <a class="lfs3-btn lfs3-btn-sm lfs3-btn-ghost" href="https://github.com/khwstolle/git-lfs3/blob/master/SECURITY.md" target="_blank" rel="noopener"><span class="icon" data-icon="lock-closed" data-size="14"></span>Security</a>
+      </div>
+    </div>
+  </footer>
+
+  <script src="index.js"></script>
+</body>
+</html>
